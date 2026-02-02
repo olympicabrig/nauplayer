@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Nau Video Stream</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; }
+        #wrapper { width: 1920px; height: 1080px; position: relative; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+    </style>
+</head>
+<body>
+    <div id="wrapper">
+        <video id="vid" autoplay muted playsinline></video>
+    </div>
+    <script>
+        const API = 'https://corsproxy.io/?' + encodeURIComponent('https://api.nau.ch/feeds/dooh/test');
+        const v = document.getElementById('vid');
+        let list = [], cur = 0;
+
+        async function load() {
+            try {
+                const r = await fetch(API);
+                const d = await r.json();
+                list = d.map(i => i.video.urls.find(u => u.endsWith('.mp4'))).filter(u => u);
+                if (list.length) play(0);
+            } catch (e) { console.error("Error loading feed"); }
+        }
+
+        function play(i) {
+            if (i >= list.length) i = 0;
+            cur = i;
+            v.src = list[cur];
+            v.play();
+        }
+
+        v.onended = () => play(cur + 1);
+        v.onerror = () => setTimeout(() => play(cur + 1), 2000);
+        load();
+    </script>
+</body>
+</html>
