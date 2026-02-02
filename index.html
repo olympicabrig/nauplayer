@@ -2,95 +2,82 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Nau Video Stream - Debug Mode</title>
+    <title>Nau Video Stream - New Proxy</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; color: white; font-family: sans-serif; }
-        #wrapper { width: 1920px; height: 1080px; position: relative; display: flex; justify-content: center; align-items: center; }
-        video { width: 100%; height: 100%; object-fit: cover; background: #000; }
-        #status { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; font-size: 14px; z-index: 100; border: 1px solid #444; }
+        #wrapper { width: 1920px; height: 1080px; position: relative; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        #status { position: absolute; top: 20px; left: 20px; background: rgba(255,0,0,0.5); padding: 10px; border-radius: 5px; font-size: 14px; z-index: 100; display: block; }
     </style>
 </head>
 <body>
 
-    <div id="status">Initialisiere...</div>
+    <div id="status">Versuche Daten zu laden...</div>
 
     <div id="wrapper">
         <video id="vid" autoplay muted playsinline></video>
     </div>
 
     <script>
-        const status = document.getElementById('status');
+        const statusDiv = document.getElementById('status');
         const v = document.getElementById('vid');
         
-        // Wir probieren zwei verschiedene Proxies, falls einer hakt
+        // Neuer Proxy-Dienst: AllOrigins
         const TARGET_API = 'https://api.nau.ch/feeds/dooh/test';
-        const PROXY = 'https://corsproxy.io/?' + encodeURIComponent(TARGET_API);
+        const PROXY = `https://api.allorigins.win/get?url=${encodeURIComponent(TARGET_API)}`;
         
         let list = [], cur = 0;
 
-        function log(msg) {
-            status.innerText = msg;
-            console.log(msg);
+        function updateStatus(msg, isError = false) {
+            statusDiv.innerText = msg;
+            statusDiv.style.background = isError ? "rgba(255,0,0,0.8)" : "rgba(0,0,0,0.5)";
+            // Nach Erfolg Status nach 10 Sek ausblenden
+            if (!isError && msg.includes("Spiele")) {
+                setTimeout(() => { statusDiv.style.display = "none"; }, 10000);
+            }
         }
 
         async function load() {
-            log("Lade Daten von API...");
             try {
-                const r = await fetch(PROXY);
-                if (!r.ok) throw new Error("Server-Antwort nicht okay: " + r.status);
+                updateStatus("Hole Daten über AllOrigins...");
+                const response = await fetch(PROXY);
                 
-                const d = await r.json();
-                log("Daten empfangen, verarbeite...");
+                if (!response.ok) throw new Error('Netzwerk-Fehler');
+                
+                const data = await response.json();
+                // AllOrigins packt die Antwort in ein "contents" Feld als String
+                const jsonData = JSON.parse(data.contents);
 
-                list = d.map(item => {
-                    const mp4 = item.video.urls.find(u => u.endsWith('.mp4'));
-                    return mp4;
+                list = jsonData.map(item => {
+                    return item.video.urls.find(u => u.endsWith('.mp4'));
                 }).filter(u => u);
 
-                log(list.length + " Videos gefunden.");
-
                 if (list.length > 0) {
+                    updateStatus(list.length + " Videos gefunden. Starte...");
                     play(0);
                 } else {
-                    log("Fehler: Keine MP4-Videos in der API gefunden.");
+                    updateStatus("API leer: Keine Videos gefunden.", true);
                 }
             } catch (e) {
-                log("FEHLER: " + e.message);
-                console.error(e);
+                updateStatus("FEHLER: " + e.message + " - Wahrscheinlich blockiert der Server auch diesen Proxy.", true);
             }
         }
 
         function play(i) {
             if (i >= list.length) i = 0;
             cur = i;
-            
-            log("Spiele Video " + (cur + 1) + " von " + list.length);
-            
+            updateStatus("Spiele Video " + (cur + 1));
             v.src = list[cur];
-            
-            // Wichtig für manche Browser: load() vor play()
-            v.load(); 
-            
-            const playPromise = v.play();
-            if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    log("Autoplay blockiert. Klicke einmal auf die Seite.");
-                    // Fallback: Klick-Event, um Video zu starten
-                    document.body.addEventListener('click', () => {
-                        v.play();
-                        log("Video gestartet nach Klick.");
-                    }, {once: true});
-                });
-            }
+            v.load();
+            v.play().catch(err => {
+                updateStatus("Autoplay blockiert. Bitte einmal klicken.", true);
+                document.body.addEventListener('click', () => { v.play(); updateStatus("Wiedergabe läuft..."); }, {once: true});
+            });
         }
 
-        v.onended = () => {
-            log("Video beendet, lade nächstes...");
-            play(cur + 1);
-        };
-
+        v.onended = () => play(cur + 1);
         v.onerror = () => {
-            log("Video-Ladefehler bei Index " + cur + ". Überspringe...");
+            updateStatus("Video-Fehler. Überspringe...", true);
             setTimeout(() => play(cur + 1), 2000);
         };
 
